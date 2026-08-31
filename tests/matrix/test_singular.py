@@ -1,0 +1,9 @@
+"""FR6 / FR7 / LA-5 -- exceptional cases are typed errors."""
+import pytest
+
+pytestmark = pytest.mark.skip(reason="LA-3/LA-4 not implemented yet")
+
+
+def test_inverse_of_singular_raises_SingularMatrix(field): ...
+def test_underdetermined_solve_raises_NoUniqueSolution(field): ...
+def test_inconsistent_solve_raises_InconsistentSystem(field): ...

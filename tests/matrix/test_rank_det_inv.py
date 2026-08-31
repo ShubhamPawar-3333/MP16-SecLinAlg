@@ -1,0 +1,9 @@
+"""FR6 / LA-3 -- rank, determinant, inverse."""
+import pytest
+
+pytestmark = pytest.mark.skip(reason="LA-3 not implemented yet")
+
+
+def test_rank_of_full_and_deficient(field): ...
+def test_determinant_matches_cofactor_on_small(field): ...
+def test_inverse_times_original_is_identity(field): ...

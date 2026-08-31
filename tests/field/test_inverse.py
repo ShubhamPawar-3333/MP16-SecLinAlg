@@ -1,0 +1,9 @@
+"""FR1 / FA-2 / FA-3 -- modular inverse via extended Euclid."""
+import pytest
+
+pytestmark = pytest.mark.skip(reason="FA-2 not implemented yet")
+
+
+def test_every_nonzero_element_has_an_inverse(field): ...
+def test_a_times_inverse_a_is_one(field): ...
+def test_inverse_of_zero_raises_NoInverse(field): ...

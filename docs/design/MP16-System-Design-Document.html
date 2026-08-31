@@ -1,0 +1,1146 @@
+<title>Secure Linear Algebra Library — System Design</title>
+<meta name="description" content="System design document for COEP CSE Mini Project 16: a field-arithmetic linear algebra library with secret-sharing primitives.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper:#f5f6f8; --surface:#ffffff; --surface-2:#fbfbfd;
+    --ink:#1b1e26; --muted:#59606e; --line:#e3e6ec; --line-strong:#cfd4de;
+    --accent:#2f4b7c; --accent-ink:#233c66; --accent-soft:#e9eff7;
+    --secure:#3d6f5f; --secure-soft:#e6f0ec;
+    --warn:#8f6415; --warn-soft:#f6efe0;
+    --danger:#a03b3b; --danger-soft:#f6e9e9;
+    --pass:#3f6f56;
+    --shadow:0 1px 2px rgba(20,25,40,.04), 0 8px 24px -12px rgba(20,25,40,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#121419; --surface:#1a1d24; --surface-2:#15181e;
+      --ink:#e5e8ee; --muted:#98a0af; --line:#2a2f3a; --line-strong:#3a414f;
+      --accent:#8fa9d8; --accent-ink:#adc0e4; --accent-soft:#1e2733;
+      --secure:#7cb6a2; --secure-soft:#1b2723;
+      --warn:#d4a259; --warn-soft:#2b2418;
+      --danger:#d98a8a; --danger-soft:#2c1d1d;
+      --pass:#82ba9c;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#121419; --surface:#1a1d24; --surface-2:#15181e;
+    --ink:#e5e8ee; --muted:#98a0af; --line:#2a2f3a; --line-strong:#3a414f;
+    --accent:#8fa9d8; --accent-ink:#adc0e4; --accent-soft:#1e2733;
+    --secure:#7cb6a2; --secure-soft:#1b2723;
+    --warn:#d4a259; --warn-soft:#2b2418;
+    --danger:#d98a8a; --danger-soft:#2c1d1d;
+    --pass:#82ba9c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.55);
+  }
+
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior:auto; } }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 24px; }
+  .layout { display:block; }
+  @media (min-width:1000px) {
+    .layout { display:grid; grid-template-columns:246px minmax(0,1fr); gap:56px; align-items:start; }
+  }
+
+  /* ---- Masthead ---- */
+  header.masthead {
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, var(--surface), var(--surface-2));
+  }
+  .masthead .wrap { padding-top:44px; padding-bottom:40px; }
+  .doc-kicker {
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:12px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--accent-ink); margin:0 0 16px;
+  }
+  h1.doc-title {
+    font-family:"Spectral", Georgia, serif; font-weight:700;
+    font-size:clamp(2rem, 1.4rem + 2.6vw, 3rem); line-height:1.1;
+    margin:0 0 14px; text-wrap:balance; letter-spacing:-.01em;
+  }
+  .doc-sub {
+    font-size:1.075rem; color:var(--muted); max-width:60ch; margin:0 0 26px;
+  }
+  .meta-grid {
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr));
+    gap:1px; background:var(--line); border:1px solid var(--line);
+    border-radius:4px; overflow:hidden; max-width:760px;
+  }
+  .meta-grid div { background:var(--surface); padding:12px 14px; }
+  .meta-grid dt {
+    font-family:"IBM Plex Mono", monospace; font-size:10.5px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 3px;
+  }
+  .meta-grid dd { margin:0; font-size:.92rem; font-weight:500; }
+
+  /* ---- Sidebar TOC ---- */
+  .toc-wrap { position:relative; }
+  nav.toc { font-size:.86rem; }
+  @media (min-width:1000px) {
+    nav.toc { position:sticky; top:24px; max-height:calc(100vh - 48px); overflow-y:auto; padding-right:8px; }
+  }
+  nav.toc .toc-head {
+    font-family:"IBM Plex Mono", monospace; font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted); margin:24px 0 12px; padding-bottom:8px;
+    border-bottom:1px solid var(--line);
+  }
+  @media (min-width:1000px){ nav.toc .toc-head { margin-top:0; } }
+  nav.toc ol { list-style:none; margin:0; padding:0; }
+  nav.toc li { margin:1px 0; }
+  nav.toc li.toc-part {
+    font-family:"IBM Plex Mono", monospace; font-size:10px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--accent-ink); font-weight:500;
+    margin:16px 0 5px; padding:0 8px;
+  }
+  nav.toc li.toc-part:first-child { margin-top:0; }
+  nav.toc a {
+    display:grid; grid-template-columns:24px 1fr; gap:8px;
+    padding:5px 8px; border-radius:4px; color:var(--muted); text-decoration:none;
+    border-left:2px solid transparent;
+  }
+  nav.toc a .n { font-family:"IBM Plex Mono", monospace; font-size:.78rem; color:var(--accent-ink); }
+  nav.toc a:hover { background:var(--accent-soft); color:var(--ink); }
+  nav.toc a.active { background:var(--accent-soft); color:var(--ink); border-left-color:var(--accent); font-weight:500; }
+  nav.toc details { margin:14px 0 0; }
+  nav.toc summary {
+    cursor:pointer; font-family:"IBM Plex Mono", monospace; font-size:11px;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+    padding:8px 0; list-style:none;
+  }
+  nav.toc summary::-webkit-details-marker { display:none; }
+  @media (min-width:1000px){ nav.toc details { display:none; } nav.toc ol.toc-list { display:block !important; } }
+  @media (max-width:999px){
+    nav.toc { border:1px solid var(--line); border-radius:6px; background:var(--surface); margin:20px 0 0; padding:4px 12px 12px; }
+    nav.toc .toc-head { display:none; }
+    nav.toc ol.toc-list { display:none; }
+  }
+
+  /* ---- Main content ---- */
+  main { padding:44px 0 96px; min-width:0; }
+  main > section { scroll-margin-top:20px; margin-bottom:52px; }
+
+  .part-divider { margin:12px 0 36px; padding-top:26px; border-top:2px solid var(--accent); scroll-margin-top:20px; }
+  main > section + .part-divider { margin-top:60px; }
+  .part-label {
+    font-family:"IBM Plex Mono", monospace; font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent-ink); display:block; margin-bottom:6px;
+  }
+  .part-title {
+    font-family:"Spectral", Georgia, serif; font-weight:700; font-size:1.95rem;
+    line-height:1.15; margin:0 0 10px; letter-spacing:-.01em;
+  }
+  .part-divider p { color:var(--muted); max-width:64ch; margin:0; }
+
+  section > h2 {
+    font-family:"Spectral", Georgia, serif; font-weight:600;
+    font-size:1.62rem; line-height:1.2; margin:0 0 4px; letter-spacing:-.005em;
+    padding-top:14px; border-top:1px solid var(--line); text-wrap:balance;
+  }
+  section > h2 .sec-n {
+    font-family:"IBM Plex Mono", monospace; font-size:.95rem; font-weight:500;
+    color:var(--accent-ink); margin-right:12px;
+  }
+  h3 {
+    font-family:"Spectral", Georgia, serif; font-weight:600; font-size:1.2rem;
+    margin:34px 0 8px; letter-spacing:-.003em;
+  }
+  h3 .sub-n { font-family:"IBM Plex Mono", monospace; font-size:.82rem; color:var(--muted); margin-right:9px; }
+  h4 {
+    font-family:"IBM Plex Sans", sans-serif; font-weight:600; font-size:.94rem;
+    margin:20px 0 6px; letter-spacing:.005em;
+  }
+  p { margin:0 0 14px; max-width:70ch; }
+  main a { color:var(--accent-ink); text-decoration:underline; text-underline-offset:2px; text-decoration-thickness:1px; }
+  strong { font-weight:600; }
+  ul, ol { margin:0 0 16px; padding-left:22px; max-width:70ch; }
+  li { margin:5px 0; }
+  li::marker { color:var(--muted); }
+  hr { border:0; border-top:1px solid var(--line); margin:34px 0; }
+  .lede { font-size:1.06rem; color:var(--muted); max-width:66ch; }
+
+  code, .mono { font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:.86em; }
+  p code, li code, td code {
+    background:var(--accent-soft); color:var(--accent-ink);
+    padding:1px 5px; border-radius:3px; white-space:nowrap;
+  }
+  .err code, code.err { background:var(--danger-soft); color:var(--danger); }
+  pre {
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:4px; padding:14px 16px; overflow-x:auto; margin:0 0 18px;
+    font-family:"IBM Plex Mono", monospace; font-size:.82rem; line-height:1.6;
+  }
+  pre code { background:none; padding:0; white-space:pre; color:var(--ink); }
+
+  /* ---- Tables ---- */
+  .table-scroll { overflow-x:auto; margin:0 0 18px; border:1px solid var(--line); border-radius:6px; }
+  table { border-collapse:collapse; width:100%; font-size:.87rem; }
+  caption { text-align:left; font-size:.8rem; color:var(--muted); padding:8px 12px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+  th, td { text-align:left; padding:9px 13px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th {
+    background:var(--surface-2); font-family:"IBM Plex Mono", monospace;
+    font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:500;
+    position:sticky; top:0;
+  }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr:hover { background:var(--accent-soft); }
+  td.mono, th.mono { font-family:"IBM Plex Mono", monospace; font-size:.8rem; }
+  .tnum { font-variant-numeric:tabular-nums; }
+
+  /* ---- Callouts ---- */
+  .callout {
+    border:1px solid var(--line); border-left:3px solid var(--muted);
+    background:var(--surface); border-radius:4px; padding:14px 16px; margin:0 0 18px;
+  }
+  .callout .c-tag {
+    font-family:"IBM Plex Mono", monospace; font-size:10.5px; letter-spacing:.1em;
+    text-transform:uppercase; font-weight:500; display:block; margin-bottom:5px;
+  }
+  .callout p:last-child, .callout ul:last-child { margin-bottom:0; }
+  .callout.decision { border-left-color:var(--accent); background:var(--accent-soft); }
+  .callout.decision .c-tag { color:var(--accent-ink); }
+  .callout.pitfall { border-left-color:var(--warn); background:var(--warn-soft); }
+  .callout.pitfall .c-tag { color:var(--warn); }
+  .callout.security { border-left-color:var(--secure); background:var(--secure-soft); }
+  .callout.security .c-tag { color:var(--secure); }
+  .callout.note .c-tag { color:var(--muted); }
+
+  .pill {
+    display:inline-block; font-family:"IBM Plex Mono", monospace; font-size:10px;
+    letter-spacing:.06em; text-transform:uppercase; padding:2px 7px; border-radius:999px;
+    border:1px solid currentColor; font-weight:500; vertical-align:middle;
+  }
+  .pill.w1 { color:var(--accent-ink); }
+  .pill.w2 { color:var(--warn); }
+  .pill.w3 { color:var(--secure); }
+  .pill.must { color:var(--danger); }
+  .pill.should { color:var(--muted); }
+  .pill.could { color:var(--muted); opacity:.8; }
+
+  /* ---- Figures ---- */
+  figure { margin:22px 0; }
+  figure svg { display:block; width:100%; height:auto; color:var(--ink); max-width:640px; margin:0 auto; }
+  .fig-wide svg { max-width:820px; }
+  figcaption { font-size:.82rem; color:var(--muted); margin-top:10px; text-align:center; max-width:60ch; margin-left:auto; margin-right:auto; }
+  svg .accent { color:var(--accent); }
+  svg text { font-family:"IBM Plex Sans", sans-serif; }
+  svg .mono-t { font-family:"IBM Plex Mono", monospace; }
+
+  .two-col { display:grid; gap:20px; }
+  @media (min-width:640px){ .two-col { grid-template-columns:1fr 1fr; } }
+  .two-col > div > h4:first-child { margin-top:0; }
+
+  footer.doc-foot {
+    border-top:1px solid var(--line); background:var(--surface-2);
+    font-size:.85rem; color:var(--muted);
+  }
+  footer.doc-foot .wrap { padding:28px 24px 40px; }
+
+  .anchor { color:var(--muted); text-decoration:none; opacity:0; margin-left:8px; font-weight:400; }
+  h2:hover .anchor, h3:hover .anchor { opacity:1; }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+
+  .theme-toggle {
+    position:fixed; right:16px; bottom:16px; z-index:20;
+    font-family:"IBM Plex Mono", monospace; font-size:11px; letter-spacing:.05em;
+    background:var(--surface); color:var(--muted); border:1px solid var(--line-strong);
+    border-radius:999px; padding:7px 13px; cursor:pointer; box-shadow:var(--shadow);
+  }
+  .theme-toggle:hover { color:var(--ink); }
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="doc-kicker">System Design Document · SDD v1.1</p>
+    <h1 class="doc-title">Secure Linear Algebra Library</h1>
+    <p class="doc-sub">A reusable library whose vector and matrix operations run over a finite field, extended with additive secret sharing and secure inner- and matrix-product protocols. COEP Technological University — CSE Mini Project 16.</p>
+    <dl class="meta-grid">
+      <div><dt>Status</dt><dd>Baseline for build</dd></div>
+      <div><dt>Traces to</dt><dd>PRD v1.0 · Backlog v1.0</dd></div>
+      <div><dt>Language</dt><dd>Python 3, stdlib only</dd></div>
+      <div><dt>Worklets</dt><dd>3 teams, parallel</dd></div>
+      <div><dt>Audience</dt><dd>Student teams · Guide</dd></div>
+      <div><dt>Date</dt><dd>August 2026</dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="wrap layout">
+  <div class="toc-wrap">
+    <nav class="toc" aria-label="Table of contents">
+      <p class="toc-head">Contents</p>
+      <details>
+        <summary>Jump to section ▾</summary>
+      </details>
+      <ol class="toc-list" id="tocList">
+        <li class="toc-part">Front matter</li>
+        <li><a href="#s1"><span class="n">1</span><span>Purpose &amp; scope</span></a></li>
+        <li><a href="#s2"><span class="n">2</span><span>References</span></a></li>
+        <li class="toc-part">Part I · High-Level Design</li>
+        <li><a href="#s3"><span class="n">3</span><span>System overview</span></a></li>
+        <li><a href="#s4"><span class="n">4</span><span>Architecture</span></a></li>
+        <li><a href="#s5"><span class="n">5</span><span>Design principles &amp; constraints</span></a></li>
+        <li><a href="#s6"><span class="n">6</span><span>Inter-worklet interface contracts</span></a></li>
+        <li><a href="#s7"><span class="n">7</span><span>Data flow &amp; protocols</span></a></li>
+        <li class="toc-part">Part II · Low-Level Design</li>
+        <li><a href="#s8"><span class="n">8</span><span>Module detailed design</span></a></li>
+        <li><a href="#s9"><span class="n">9</span><span>Data structures</span></a></li>
+        <li><a href="#s10"><span class="n">10</span><span>Error-handling model</span></a></li>
+        <li><a href="#s11"><span class="n">11</span><span>Complexity analysis</span></a></li>
+        <li class="toc-part">Part III · Quality, Security &amp; Delivery</li>
+        <li><a href="#s12"><span class="n">12</span><span>Security design</span></a></li>
+        <li><a href="#s13"><span class="n">13</span><span>Non-functional requirements</span></a></li>
+        <li><a href="#s14"><span class="n">14</span><span>Testing strategy</span></a></li>
+        <li><a href="#s15"><span class="n">15</span><span>Repository &amp; build</span></a></li>
+        <li><a href="#s16"><span class="n">16</span><span>Risks &amp; mitigations</span></a></li>
+        <li><a href="#s17"><span class="n">17</span><span>Traceability matrix</span></a></li>
+        <li><a href="#s18"><span class="n">18</span><span>Open questions</span></a></li>
+      </ol>
+    </nav>
+  </div>
+
+  <main>
+    <section id="s1">
+      <h2><span class="sec-n">1</span>Purpose &amp; scope<a class="anchor" href="#s1">#</a></h2>
+      <p class="lede">This document describes <em>how</em> the Secure Linear Algebra Library is built. It converts the product requirements and backlog into a concrete architecture, module design, interface set, and verification plan that the three worklet teams can develop against in parallel and then integrate into one system.</p>
+
+      <h3>How this document is organised</h3>
+      <p>The material is split into three parts, matching the levels of design an evaluator looks for:</p>
+      <ul>
+        <li><strong>Part I — High-Level Design (§3–§7):</strong> the system in context, the layered architecture, the contracts between the three worklets, and how data moves through it.</li>
+        <li><strong>Part II — Low-Level Design (§8–§11):</strong> the how, module by module — algorithms, public signatures, data structures, error types, and the complexity budget.</li>
+        <li><strong>Part III — Quality, Security &amp; Delivery (§12–§18):</strong> the security argument, non-functional targets, test plan, repository layout, risks, and traceability.</li>
+      </ul>
+
+      <h3>In scope for this document</h3>
+      <ul>
+        <li>The layered architecture and the dependency rules between layers.</li>
+        <li>The design of every module: responsibilities, key algorithms, public types, and errors.</li>
+        <li>The frozen interfaces between the three worklets, with pre- and post-conditions.</li>
+        <li>The secure-computation protocols (secret sharing, secure addition, Beaver-triple multiplication).</li>
+        <li>The error model, security argument, complexity budget, and test plan.</li>
+        <li>Traceability from each functional requirement to a module, a backlog story, and a test.</li>
+      </ul>
+
+      <h3>Out of scope</h3>
+      <ul>
+        <li>Product justification, personas, and market context — see the PRD (<a href="#s2">§2</a>).</li>
+        <li>Sprint scheduling and story estimates — see the Backlog.</li>
+        <li>Any implementation that depends on an excluded library (NumPy, an MPC framework, floating point in the core). These are barred by the brief and fail review regardless of output.</li>
+      </ul>
+
+      <div class="callout note">
+        <span class="c-tag">Reading guide</span>
+        <p>Section numbers are stable and are used for cross-reference (e.g. "the error contract in <a href="#s10">§10</a>"). Worklet ownership is marked inline with <span class="pill w1">W1</span> <span class="pill w2">W2</span> <span class="pill w3">W3</span> tags. Priority tags <span class="pill must">Must</span> <span class="pill should">Should</span> <span class="pill could">Could</span> follow the backlog's MoSCoW ranking.</p>
+      </div>
+    </section>
+
+    <section id="s2">
+      <h2><span class="sec-n">2</span>References<a class="anchor" href="#s2">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <caption>Source documents this design is derived from and must stay consistent with.</caption>
+          <thead><tr><th>Ref</th><th>Document</th><th>Authority for</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">R1</td><td>Product Requirements Document v1.0</td><td>Scope, users, locked decisions, release plan. Source of truth for what the product must and must not contain.</td></tr>
+            <tr><td class="mono">R2</td><td>User Stories &amp; Backlog v1.0</td><td>Story-level acceptance criteria and the Definition of Done. Source of truth for when a unit of work is complete.</td></tr>
+            <tr><td class="mono">R3</td><td>Guidelines to Students — Mini Project 16</td><td>Worklet tasks, timeline, deliverables, viva focus, pitfalls.</td></tr>
+            <tr><td class="mono">R4</td><td>Guidelines to Faculty — Mini Project 16</td><td>Functional requirements FR1–FR10, NFRs, high-level design, evaluation questions, rubric.</td></tr>
+            <tr><td class="mono">R5</td><td>CSE Mini Projects — Worklets (catalogue)</td><td>The foundations-first framework and the three-worklet structure.</td></tr>
+            <tr><td class="mono">R6</td><td>Evaluation 1 Template V2</td><td>Required contents of the Week-3 requirements + HLD + interfaces review.</td></tr>
+            <tr><td class="mono">R7</td><td>MP16 Complete Product Development &amp; Evaluation Plan</td><td>Consolidated working guide; interface list; risk register.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="part-divider" id="partI">
+      <span class="part-label">Part I</span>
+      <h2 class="part-title">High-Level Design</h2>
+      <p>The what and the shape of the system: its context and users, the six-layer architecture and the dependency rules that hold it together, the frozen contracts between the three worklets, and the end-to-end data flow — including the one protocol the project exists to teach.</p>
+    </div>
+
+    <section id="s3">
+      <h2><span class="sec-n">3</span>System overview<a class="anchor" href="#s3">#</a></h2>
+      <p>The library lets a developer choose a prime field, build vectors and matrices whose entries live in that field, perform exact linear algebra, and then run additive secret sharing and secure product operations on hidden values. The <strong>same</strong> algebra serves both plaintext and shared data — the secure layer adds protocols, not a second matrix implementation.</p>
+
+      <h3><span class="sub-n">3.1</span>What the system does</h3>
+      <ul>
+        <li><strong>Exact field arithmetic.</strong> Add, subtract, multiply, and invert integers modulo a prime <code>p</code>, with no rounding anywhere.</li>
+        <li><strong>Linear algebra over the field.</strong> Matrix multiply and transpose; Gaussian elimination and everything derived from it — rank, determinant, inverse, and solving <code>Ax = b</code> — with singular cases reported explicitly.</li>
+        <li><strong>Secret-sharing primitives.</strong> Split a value into <code>n</code> additive shares, reconstruct it, and add shared values locally with no communication.</li>
+        <li><strong>Secure products.</strong> A private inner product and a private matrix product on shared inputs, using a trusted dealer for shared&#215;shared multiplication, each verified against the plaintext result.</li>
+      </ul>
+
+      <h3><span class="sub-n">3.2</span>Users</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>User</th><th>Needs from the system</th></tr></thead>
+          <tbody>
+            <tr><td>Library user (developer)</td><td>A clean, predictable API for exact linear algebra; typed errors on bad input; no cryptographic bookkeeping on the common path.</td></tr>
+            <tr><td>Protocol party</td><td>Sharing, reconstruction, and secure product operations that behave identically whether run by one simulated process or several.</td></tr>
+            <tr><td>Guide / evaluator</td><td>Code and notes that answer the learning-outcome questions directly — the security argument, the complexity derivation, the singular-case handling.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="sub-n">3.3</span>Product goals this design serves</h3>
+      <ul>
+        <li>Every acceptance criterion in the backlog passes, with automated tests.</li>
+        <li>Zero excluded dependencies in the codebase.</li>
+        <li>Secure inner and matrix products reconstruct to the plaintext result across randomised tests.</li>
+        <li>Every learning objective can be defended in an individual viva.</li>
+      </ul>
+    </section>
+
+    <section id="s4">
+      <h2><span class="sec-n">4</span>Architecture<a class="anchor" href="#s4">#</a></h2>
+      <p>The system is a strict bottom-up stack of six layers. Each layer may use only the layer directly below it (and, for the secure layer, the trusted dealer). This is a graded design constraint, not a preference: the algebra must be fully testable with no cryptography present, and the secure layer must reuse the algebra unchanged.</p>
+
+      <figure class="fig-wide">
+        <svg viewBox="0 0 800 470" role="img" aria-label="Six-layer dependency stack. From bottom: field arithmetic, vector and matrix types, matrix algorithms, secret sharing, secure computation, verification. Each layer depends only on the one below. A trusted dealer feeds the secure computation layer. Worklet 1 owns the bottom three layers, Worklet 2 owns matrix algorithms, Worklet 3 owns secret sharing and secure computation, and all teams contribute to verification.">
+          <defs>
+            <marker id="dep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g>
+            <rect x="150" y="30"  width="420" height="56" rx="3" fill="var(--pass)" opacity="0.14" stroke="var(--pass)"/>
+            <text x="360" y="54" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">6 · Verification &amp; benchmarking</text>
+            <text x="360" y="72" text-anchor="middle" font-size="11" fill="var(--muted)">share-vs-plaintext checks · complexity timings</text>
+
+            <rect x="150" y="104" width="420" height="56" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="360" y="128" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">5 · Secure computation</text>
+            <text x="360" y="146" text-anchor="middle" font-size="11" fill="var(--muted)">Beaver triples · private inner &amp; matrix product</text>
+
+            <rect x="150" y="178" width="420" height="56" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="360" y="202" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">4 · Secret sharing</text>
+            <text x="360" y="220" text-anchor="middle" font-size="11" fill="var(--muted)">split · reconstruct · local secure addition</text>
+
+            <rect x="150" y="252" width="420" height="56" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="360" y="276" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">3 · Matrix algorithms</text>
+            <text x="360" y="294" text-anchor="middle" font-size="11" fill="var(--muted)">multiply · Gaussian elimination · rank/det/inverse · solve</text>
+
+            <rect x="150" y="326" width="420" height="56" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="360" y="350" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">2 · Vector &amp; Matrix types</text>
+            <text x="360" y="368" text-anchor="middle" font-size="11" fill="var(--muted)">generic, parameterised by the field</text>
+
+            <rect x="150" y="400" width="420" height="56" rx="3" class="accent" fill="currentColor" opacity="0.18" stroke="currentColor"/>
+            <text x="360" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">1 · Field arithmetic (Z_p)</text>
+            <text x="360" y="442" text-anchor="middle" font-size="11" fill="var(--muted)">add · sub · mul · inverse (extended Euclid)</text>
+          </g>
+          <g stroke="currentColor" stroke-width="1.5" fill="none">
+            <line x1="130" y1="112" x2="130" y2="150" marker-end="url(#dep)"/>
+            <line x1="130" y1="186" x2="130" y2="224" marker-end="url(#dep)"/>
+            <line x1="130" y1="260" x2="130" y2="298" marker-end="url(#dep)"/>
+            <line x1="130" y1="334" x2="130" y2="372" marker-end="url(#dep)"/>
+            <line x1="130" y1="408" x2="130" y2="446" marker-end="url(#dep)"/>
+          </g>
+          <text x="70" y="250" font-size="11" fill="var(--muted)" transform="rotate(-90 70 250)" text-anchor="middle">each layer depends only on the one below</text>
+          <g>
+            <rect x="608" y="104" width="150" height="56" rx="3" fill="var(--surface)" stroke="var(--muted)" stroke-dasharray="4 3"/>
+            <text x="683" y="128" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Trusted dealer</text>
+            <text x="683" y="145" text-anchor="middle" font-size="10" fill="var(--muted)">supplies triples</text>
+            <line x1="606" y1="132" x2="574" y2="132" stroke="currentColor" stroke-width="1.5" marker-end="url(#dep)"/>
+          </g>
+          <g font-size="11" fill="var(--muted)" class="mono-t">
+            <line x1="90" y1="326" x2="90" y2="456" stroke="var(--accent)" stroke-width="2"/>
+            <text x="84" y="395" text-anchor="end" fill="var(--accent-ink)">W1</text>
+            <line x1="90" y1="252" x2="90" y2="308" stroke="var(--warn)" stroke-width="2"/>
+            <text x="84" y="283" text-anchor="end" fill="var(--warn)">W2</text>
+            <line x1="90" y1="104" x2="90" y2="234" stroke="var(--secure)" stroke-width="2"/>
+            <text x="84" y="172" text-anchor="end" fill="var(--secure)">W3</text>
+            <line x1="90" y1="30" x2="90" y2="86" stroke="var(--pass)" stroke-width="2"/>
+            <text x="84" y="61" text-anchor="end" fill="var(--pass)">all</text>
+          </g>
+        </svg>
+        <figcaption>Figure 1 — The dependency stack. Worklet 1 provides layers 1–2 plus matrix multiply in layer 3; Worklet 2 completes layer 3; Worklet 3 builds layers 4–5 against the trusted dealer; verification (layer 6) is a shared responsibility.</figcaption>
+      </figure>
+
+      <h3><span class="sub-n">4.1</span>Component catalogue</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Component</th><th>Responsibility</th><th>Depends on</th><th>Owner</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">field</td><td>Prime-field definition; <code>FieldElement</code> with modular add/sub/mul/eq and extended-Euclid inverse.</td><td>—</td><td><span class="pill w1">W1</span></td></tr>
+            <tr><td class="mono">types</td><td>Generic <code>Vector</code> and <code>Matrix</code>; construction, shape, indexing, add, scalar-mul, transpose, equality.</td><td class="mono">field</td><td><span class="pill w1">W1</span></td></tr>
+            <tr><td class="mono">matmul</td><td>Schoolbook matrix multiplication with documented complexity; optional Strassen.</td><td class="mono">types</td><td><span class="pill w1">W1</span> / <span class="pill w2">W2</span></td></tr>
+            <tr><td class="mono">linalg</td><td>Gaussian elimination over the field; rank, determinant, inverse; solve <code>Ax = b</code>; singular-case reporting.</td><td class="mono">types, field</td><td><span class="pill w2">W2</span></td></tr>
+            <tr><td class="mono">sharing</td><td>Additive share split and reconstruction; local secure addition on shares.</td><td class="mono">field</td><td><span class="pill w3">W3</span></td></tr>
+            <tr><td class="mono">dealer</td><td>Trusted dealer producing shared Beaver triples <code>(a, b, c)</code> with <code>c = a·b</code>.</td><td class="mono">sharing</td><td><span class="pill w3">W3</span></td></tr>
+            <tr><td class="mono">secure</td><td>Private inner product and private matrix product on shares; masked-open-and-combine step.</td><td class="mono">sharing, dealer, types</td><td><span class="pill w3">W3</span></td></tr>
+            <tr><td class="mono">verify</td><td>Randomised share-vs-plaintext verification; complexity benchmarks.</td><td>all</td><td><span class="pill w3">W3</span> + all</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="sub-n">4.2</span>Technology stack</h3>
+      <ul>
+        <li><strong>Language:</strong> Python 3, standard library only. C++ is acceptable if the team wants the performance exercise; standard library only either way.</li>
+        <li><strong>Randomness:</strong> <code>secrets</code> module for share generation (uniform over <code>[0, p)</code>). <code>random</code> is acceptable for benchmark data only.</li>
+        <li><strong>Testing:</strong> <code>unittest</code> or <code>pytest</code> (pytest is a dev dependency, not shipped in the library).</li>
+        <li><strong>Timing:</strong> <code>time.perf_counter</code> for benchmarks.</li>
+        <li><strong>No</strong> NumPy, SymPy, gmpy2, MP-SPDZ, database, ORM, web, cloud, or ML/AI library anywhere.</li>
+      </ul>
+    </section>
+
+    <section id="s5">
+      <h2><span class="sec-n">5</span>Design principles &amp; constraints<a class="anchor" href="#s5">#</a></h2>
+
+      <h3><span class="sub-n">5.1</span>Principles</h3>
+      <ol>
+        <li><strong>Foundations-first.</strong> Every core concept — modular arithmetic, the inverse, matrix algorithms, sharing, triples — is implemented by the team. If a library would hide the concept, it is not used.</li>
+        <li><strong>Exactness.</strong> All arithmetic is over <code>Z_p</code>. No floating point appears in <code>field</code>, <code>types</code>, <code>matmul</code>, <code>linalg</code>, <code>sharing</code>, or <code>secure</code>.</li>
+        <li><strong>Layer independence.</strong> A layer never reaches around the one below it or imports from a layer above. The algebra has no knowledge of sharing.</li>
+        <li><strong>Parameterise the field.</strong> The prime is a value passed at field construction. It is never a module-level constant or a default baked into <code>Matrix</code>.</li>
+        <li><strong>Fail loudly.</strong> Every exceptional case — no inverse, wrong shape, singular matrix, inconsistent system, malformed shares — raises a specific typed error (<a href="#s10">§10</a>). No silent <code>None</code>, no wrong answer.</li>
+        <li><strong>Contracts before code.</strong> The interfaces in <a href="#s6">§6</a> are frozen at the Week-3 review. Teams build against the published API, not another team's internals.</li>
+      </ol>
+
+      <h3><span class="sub-n">5.2</span>Locked decisions</h3>
+      <div class="table-scroll">
+        <table>
+          <caption>From PRD §7. Change only with guide sign-off and a version bump of this document.</caption>
+          <thead><tr><th>Decision</th><th>Value</th><th>Rationale</th></tr></thead>
+          <tbody>
+            <tr><td>Test prime</td><td class="mono">p = 101</td><td>Small enough that every result is hand-checkable in tests and the viva.</td></tr>
+            <tr><td>Runtime prime</td><td class="mono">p = 2³¹ − 1</td><td>A Mersenne prime; must exceed every value and every intermediate sum in intended use.</td></tr>
+            <tr><td>Parties</td><td class="mono">n = 3 default</td><td>Keep all sharing code general in <code>n</code>; 3 is only the default and the demo value.</td></tr>
+            <tr><td>Execution model</td><td>Single process</td><td>All parties simulated in one process. No sockets, no networking.</td></tr>
+            <tr><td>Multiplication</td><td>Trusted-dealer Beaver triples</td><td>Real triple generation is out of scope and must be named as such in the write-up.</td></tr>
+            <tr><td>Threat model</td><td>Honest-but-curious</td><td>Parties follow the protocol but may inspect what they hold. Guarantee: any <code>n−1</code> shares reveal nothing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="sub-n">5.3</span>Explicit exclusions</h3>
+      <p>Numeric libraries (NumPy, BLAS/LAPACK); MPC or crypto frameworks (MP-SPDZ); floating-point arithmetic in the library; databases and ORMs; web frameworks and cloud services; machine-learning or AI libraries; malicious-adversary security; cryptographic triple generation without a trusted dealer.</p>
+
+      <div class="callout pitfall">
+        <span class="c-tag">Watch for</span>
+        <ul>
+          <li>"Field" arithmetic done in floating point — results stop being exact and sharing breaks.</li>
+          <li>A modular inverse that returns a wrong value instead of raising when the element is not coprime to <code>p</code>.</li>
+          <li>Gaussian elimination that divides by a pivot instead of multiplying by its modular inverse.</li>
+          <li>Reconstruction that leaks the secret from a single share (e.g. non-uniform first shares).</li>
+          <li>Claiming a secure product is correct without a randomised check against the plaintext.</li>
+          <li>The prime hard-coded in <code>Matrix</code> so the API cannot be reused across fields.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="s6">
+      <h2><span class="sec-n">6</span>Inter-worklet interface contracts<a class="anchor" href="#s6">#</a></h2>
+      <p>These six contracts are the integration surface between the worklets. They are <strong>frozen at the Week-3 review</strong>. A change after that needs guide sign-off, a version bump of this document, and notification to every consuming team.</p>
+
+      <div class="table-scroll">
+        <table>
+          <caption>Provider → consumer, the contract to agree, and the rules that govern it.</caption>
+          <thead><tr><th>Interface</th><th>Flow</th><th>Contract</th><th>Preconditions / errors</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">Field API</td><td>W1 → W2, W3</td>
+              <td>Prime <code>p</code>; <code>FieldElement</code> construction and reduction; <code>add</code>, <code>sub</code>, <code>mul</code>, <code>neg</code>, <code>eq</code>, <code>inverse</code>, <code>truediv</code>.</td>
+              <td><code>p</code> prime; no hard-coded <code>p</code>; <code class="err">NoInverse</code> on <code>0</code>; <code class="err">FieldMismatch</code> across fields.</td>
+            </tr>
+            <tr>
+              <td class="mono">Vector API</td><td>W1 → W2, W3</td>
+              <td>Construction from a sequence + field; <code>len</code>/<code>shape</code>; indexing; add, sub, scalar-mul, dot (plaintext).</td>
+              <td>Field association required; <code class="err">ShapeError</code> on length mismatch.</td>
+            </tr>
+            <tr>
+              <td class="mono">Matrix API</td><td>W1 → W2, W3</td>
+              <td><code>rows</code>, <code>cols</code>, <code>shape</code>; add, sub, scalar-mul, transpose, <code>multiply</code>; entry access.</td>
+              <td><code class="err">ShapeError</code> for non-rectangular input or incompatible dimensions; operands never mutated.</td>
+            </tr>
+            <tr>
+              <td class="mono">Linear-algebra API</td><td>W2 → integration</td>
+              <td><code>rank</code>, <code>determinant</code>, <code>inverse</code>, <code>solve</code>, plus the documented elimination behaviour.</td>
+              <td><code class="err">SingularMatrix</code>, <code class="err">NoUniqueSolution</code>, <code class="err">InconsistentSystem</code> are distinct and documented.</td>
+            </tr>
+            <tr>
+              <td class="mono">Share representation</td><td>W3 → integration</td>
+              <td>Field; party count <code>n</code>; share ordering by party index; <code>reconstruct</code> as sum mod <code>p</code>.</td>
+              <td><code class="err">ShareCountMismatch</code>, <code class="err">FieldMismatch</code>; shares never reordered.</td>
+            </tr>
+            <tr>
+              <td class="mono">Secure operation API</td><td>W3 → integration</td>
+              <td>Share inputs → share output; which ops are local vs. triple-backed; the trusted-dealer assumption.</td>
+              <td>Triple supply must precede a shared&#215;shared multiply; opened values documented as safe to reveal.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Contract rules (all interfaces)</h4>
+      <ul>
+        <li>Stable names and types; a signature change is a versioned event.</li>
+        <li>Every public function has a docstring stating pre-conditions, post-conditions, and the errors it may raise.</li>
+        <li>Consumers depend on the published API only, never on a provider's private attributes.</li>
+        <li>Errors are typed classes from the shared hierarchy in <a href="#s10">§10</a>, never bare <code>ValueError</code> or <code>assert</code>.</li>
+      </ul>
+
+      <div class="callout decision">
+        <span class="c-tag">Decision — entry type at the boundary</span>
+        <p>Matrices and vectors expose <code>FieldElement</code> entries at the API boundary, even if they store raw <code>int</code>s internally for speed. This keeps <code>types</code>, <code>linalg</code>, and <code>secure</code> uniform and makes field-mismatch errors catchable. Revisit only if benchmarks show the wrapper is the bottleneck — and record the measurement if so.</p>
+      </div>
+
+      <div class="callout note">
+        <span class="c-tag">Where the detail lives</span>
+        <p>This section fixes the <em>names, directions, and rules</em> of the contracts — the high-level agreement all teams sign up to. The concrete signatures behind each interface are in the module designs of <a href="#s8">§8</a>, and the error types in <a href="#s10">§10</a>.</p>
+      </div>
+    </section>
+
+    <section id="s7">
+      <h2><span class="sec-n">7</span>Data flow &amp; protocols<a class="anchor" href="#s7">#</a></h2>
+
+      <h3><span class="sub-n">7.1</span>End-to-end flow</h3>
+      <p>A value enters the field; exact arithmetic runs; vectors and matrices are built from field elements; matrix algorithms run with no floating point. For the secure path, a value is split into additive shares, secure operations run locally on the shares (with triples for multiplication), and reconstruction recovers a result that must equal the plaintext computation.</p>
+
+      <figure class="fig-wide">
+        <svg viewBox="0 0 800 300" role="img" aria-label="Two parallel paths that must agree. The plaintext path: a value becomes a field element, then a vector or matrix, then goes through a matrix algorithm to a plaintext result. The secure path: the same value is split into shares, secure operations run on the shares using Beaver triples for multiplication, then reconstruction produces a secure result. The verification step compares the two results and they must be equal.">
+          <defs>
+            <marker id="flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <rect x="20" y="128" width="96" height="44" rx="3" fill="var(--surface)" stroke="currentColor"/>
+          <text x="68" y="148" text-anchor="middle" font-size="12" fill="currentColor">value</text>
+          <text x="68" y="163" text-anchor="middle" font-size="10" fill="var(--muted)">an integer</text>
+
+          <g>
+            <rect x="170" y="30" width="120" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="230" y="50" text-anchor="middle" font-size="12" fill="currentColor">FieldElement</text>
+            <text x="230" y="65" text-anchor="middle" font-size="10" fill="var(--muted)">reduced mod p</text>
+
+            <rect x="330" y="30" width="120" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="390" y="50" text-anchor="middle" font-size="12" fill="currentColor">Vector / Matrix</text>
+
+            <rect x="490" y="30" width="140" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="560" y="50" text-anchor="middle" font-size="12" fill="currentColor">matrix algorithm</text>
+            <text x="560" y="65" text-anchor="middle" font-size="10" fill="var(--muted)">multiply · solve · …</text>
+
+            <rect x="670" y="30" width="110" height="44" rx="3" fill="var(--surface)" stroke="currentColor"/>
+            <text x="725" y="55" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">plaintext result</text>
+          </g>
+          <g>
+            <rect x="170" y="226" width="120" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="230" y="246" text-anchor="middle" font-size="12" fill="currentColor">share(v, n)</text>
+            <text x="230" y="261" text-anchor="middle" font-size="10" fill="var(--muted)">n additive shares</text>
+
+            <rect x="330" y="226" width="120" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="390" y="246" text-anchor="middle" font-size="12" fill="currentColor">secure op</text>
+            <text x="390" y="261" text-anchor="middle" font-size="10" fill="var(--muted)">local + triples</text>
+
+            <rect x="490" y="226" width="140" height="44" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+            <text x="560" y="246" text-anchor="middle" font-size="12" fill="currentColor">reconstruct</text>
+            <text x="560" y="261" text-anchor="middle" font-size="10" fill="var(--muted)">sum shares mod p</text>
+
+            <rect x="670" y="226" width="110" height="44" rx="3" fill="var(--surface)" stroke="currentColor"/>
+            <text x="725" y="251" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">secure result</text>
+          </g>
+          <rect x="330" y="150" width="120" height="38" rx="3" fill="var(--surface)" stroke="var(--muted)" stroke-dasharray="4 3"/>
+          <text x="390" y="173" text-anchor="middle" font-size="11" fill="currentColor">trusted dealer</text>
+          <line x1="390" y1="188" x2="390" y2="224" stroke="currentColor" stroke-width="1.3" marker-end="url(#flow)"/>
+          <text x="400" y="210" font-size="9" class="mono-t" fill="var(--muted)">triples</text>
+
+          <g stroke="currentColor" stroke-width="1.4" fill="none">
+            <path d="M116 140 C 140 110, 150 70, 168 55" marker-end="url(#flow)"/>
+            <path d="M116 160 C 140 190, 150 235, 168 248" marker-end="url(#flow)"/>
+            <line x1="290" y1="52" x2="328" y2="52" marker-end="url(#flow)"/>
+            <line x1="450" y1="52" x2="488" y2="52" marker-end="url(#flow)"/>
+            <line x1="630" y1="52" x2="668" y2="52" marker-end="url(#flow)"/>
+            <line x1="290" y1="248" x2="328" y2="248" marker-end="url(#flow)"/>
+            <line x1="450" y1="248" x2="488" y2="248" marker-end="url(#flow)"/>
+            <line x1="630" y1="248" x2="668" y2="248" marker-end="url(#flow)"/>
+          </g>
+          <g class="accent">
+            <line x1="725" y1="74" x2="725" y2="226" stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 4"/>
+            <circle cx="725" cy="150" r="16" fill="var(--paper)" stroke="currentColor" stroke-width="1.6"/>
+            <text x="725" y="155" text-anchor="middle" font-size="14" font-weight="700" fill="currentColor">=</text>
+          </g>
+          <text x="748" y="153" font-size="10" class="mono-t" fill="var(--muted)">VB-1: must be equal</text>
+        </svg>
+        <figcaption>Figure 2 — The plaintext and secure paths compute the same function by different means. Verification (VB-1) asserts the two results are equal across randomised inputs; if they diverge, the secure layer is wrong.</figcaption>
+      </figure>
+
+      <h3><span class="sub-n">7.2</span>Secure multiplication with a Beaver triple</h3>
+      <p>Addition and public scaling on shares are local and need no interaction. Multiplying two <em>shared</em> values is the one operation that does — and it is the concept the design is built to teach. The sequence below is one shared&#215;shared multiply; the inner product repeats it once per term.</p>
+
+      <figure class="fig-wide">
+        <svg viewBox="0 0 800 340" role="img" aria-label="Sequence for multiplying shared x by shared y. Step 1: the dealer distributes shares of a Beaver triple a, b, c where c equals a times b. Step 2: each party locally computes its share of d equals x minus a and e equals y minus b. Step 3: parties open d and e by broadcasting and summing shares, which is safe because a and b are random masks. Step 4: each party locally computes its share of x times y as c share plus d times b share plus e times a share, and one party also adds the public constant d times e. The result is a valid sharing of x times y.">
+          <defs>
+            <marker id="seq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <line x1="150" y1="40" x2="150" y2="316" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4"/>
+          <line x1="650" y1="40" x2="650" y2="316" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4"/>
+          <text x="150" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Trusted dealer</text>
+          <text x="650" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Parties 1 … n</text>
+
+          <text x="20" y="70" font-size="11" class="mono-t" fill="var(--accent-ink)">1</text>
+          <line x1="150" y1="74" x2="648" y2="74" stroke="currentColor" stroke-width="1.4" marker-end="url(#seq)"/>
+          <text x="400" y="66" text-anchor="middle" font-size="11" fill="currentColor">distribute shares of triple ([a], [b], [c]),  c = a·b</text>
+
+          <text x="20" y="126" font-size="11" class="mono-t" fill="var(--accent-ink)">2</text>
+          <rect x="470" y="102" width="300" height="40" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+          <text x="620" y="120" text-anchor="middle" font-size="11" fill="currentColor">local: [d] = [x] − [a],  [e] = [y] − [b]</text>
+          <text x="620" y="135" text-anchor="middle" font-size="10" fill="var(--muted)">no communication</text>
+
+          <text x="20" y="182" font-size="11" class="mono-t" fill="var(--accent-ink)">3</text>
+          <path d="M650 160 C 560 172, 560 196, 648 208" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#seq)"/>
+          <text x="500" y="176" text-anchor="middle" font-size="11" fill="currentColor">open d and e</text>
+          <text x="500" y="190" text-anchor="middle" font-size="10" fill="var(--muted)">broadcast + sum shares — safe: a, b are uniform masks</text>
+
+          <text x="20" y="250" font-size="11" class="mono-t" fill="var(--accent-ink)">4</text>
+          <rect x="440" y="226" width="330" height="52" rx="3" class="accent" fill="currentColor" opacity="0.10" stroke="currentColor"/>
+          <text x="605" y="245" text-anchor="middle" font-size="11" fill="currentColor">local: [xy] = [c] + d·[b] + e·[a] + d·e</text>
+          <text x="605" y="260" text-anchor="middle" font-size="10" fill="var(--muted)">constant d·e added to one party's share</text>
+
+          <rect x="470" y="294" width="300" height="34" rx="3" fill="var(--surface)" stroke="currentColor"/>
+          <text x="620" y="315" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">[xy] — a valid sharing of x·y</text>
+
+          <text x="30" y="310" font-size="10" fill="var(--muted)" class="mono-t">1 triple</text>
+          <text x="30" y="322" font-size="10" fill="var(--muted)" class="mono-t">per multiply</text>
+        </svg>
+        <figcaption>Figure 3 — Beaver-triple multiplication. Reconstructing step 4 gives <code>ab + (x−a)b + (y−b)a + (x−a)(y−b) = xy</code>. Only <code>d</code> and <code>e</code> are ever revealed, and each is a one-time-padded value.</figcaption>
+      </figure>
+    </section>
+
+    <div class="part-divider" id="partII">
+      <span class="part-label">Part II</span>
+      <h2 class="part-title">Low-Level Design</h2>
+      <p>The how, one module at a time: responsibilities, key algorithms, illustrative public signatures, the concrete data structures behind the types, the full error hierarchy, and the complexity each operation must meet.</p>
+    </div>
+
+    <section id="s8">
+      <h2><span class="sec-n">8</span>Module detailed design<a class="anchor" href="#s8">#</a></h2>
+      <p>Each module below lists its responsibility, the key algorithms, the public surface, and the errors it raises. Signatures are illustrative Python; the exact names and directions are the contracts fixed in <a href="#s6">§6</a>.</p>
+
+      <h3><span class="sub-n">8.1</span>Field arithmetic <span class="pill w1">W1</span></h3>
+      <p>The foundation. <code>Field(p)</code> validates that <code>p</code> is prime and acts as a factory for <code>FieldElement</code>. Every element carries a reference to its field; operations between elements of different fields raise.</p>
+      <h4>Algorithms</h4>
+      <ul>
+        <li><strong>Reduction:</strong> any integer, positive or negative, is normalised into <code>[0, p)</code> by <code>x % p</code> (Python's <code>%</code> already returns a non-negative result for positive <code>p</code>).</li>
+        <li><strong>Inverse:</strong> the extended Euclidean algorithm computes <code>(g, s, t)</code> with <code>s·a + t·p = g</code>. When <code>g == 1</code>, <code>s mod p</code> is the inverse; otherwise raise. Never search all values.</li>
+        <li><strong>Division:</strong> <code>a / b</code> is defined as <code>a · inverse(b)</code>.</li>
+      </ul>
+      <h4>Public surface</h4>
+      <pre><code>Field(p) -&gt; Field
+  .element(x: int) -&gt; FieldElement      # reduces x into [0, p)
+  .zero, .one -&gt; FieldElement
+  .random() -&gt; FieldElement             # uniform in [0, p), via secrets
+
+FieldElement
+  __add__ __sub__ __mul__ __neg__ __eq__   # all reduce mod p
+  inverse() -&gt; FieldElement                # raises NoInverse for 0
+  __truediv__(other) -&gt; FieldElement       # self * other.inverse()</code></pre>
+      <h4>Errors</h4>
+      <ul>
+        <li><code class="err">NoInverse</code> — <code>inverse()</code> of <code>0</code>, or of any element not coprime to <code>p</code>.</li>
+        <li><code class="err">FieldMismatch</code> — an operation between elements of two different fields.</li>
+        <li><code class="err">NotPrime</code> — <code>Field(p)</code> with composite or non-positive <code>p</code>.</li>
+      </ul>
+      <h4>Tests (FA-3)</h4>
+      <p>Automated checks for associativity, commutativity, distributivity, additive and multiplicative identities, and inverses over <code>p = 101</code>; a check that <code>a · inverse(a) == 1</code> for every non-zero <code>a</code>; a check that <code>inverse(0)</code> raises.</p>
+
+      <h3><span class="sub-n">8.2</span>Vector &amp; Matrix types <span class="pill w1">W1</span></h3>
+      <p>Generic containers bound to a field at construction. Entries are stored as reduced integers or <code>FieldElement</code>s (team's choice, subject to the boundary rule in <a href="#s6">§6</a>). A <code>Matrix</code> is row-major; a <code>Vector</code> is a 1-D case with an orientation flag if the team needs row/column vectors.</p>
+      <h4>Operations</h4>
+      <ul>
+        <li><code>add</code>, <code>sub</code> — require matching shape, else <code class="err">ShapeError</code>.</li>
+        <li><code>scalar_mul(k)</code> — multiplies every entry by a field element.</li>
+        <li><code>transpose()</code> — returns a new matrix, does not mutate the original.</li>
+        <li><code>__eq__</code> — compares field, shape, and all reduced entries.</li>
+        <li><code>__getitem__</code> / <code>__setitem__</code> — bounds-checked indexing.</li>
+      </ul>
+      <h4>Invariants</h4>
+      <ul>
+        <li>Construction validates that a matrix is rectangular; a ragged row list raises <code class="err">ShapeError</code>.</li>
+        <li>Shape is stored and queryable as <code>.shape -&gt; (rows, cols)</code>.</li>
+        <li>No operation mutates its operands; every result is a fresh object.</li>
+      </ul>
+      <h4>Tests (CT-3)</h4>
+      <p><code>A + 0 == A</code>, <code>A · I == A</code>, <code>(Aᵀ)ᵀ == A</code>, <code>(A·B)ᵀ == Bᵀ · Aᵀ</code> over <code>p = 101</code>.</p>
+
+      <h3><span class="sub-n">8.3</span>Matrix algorithms <span class="pill w1">W1</span> <span class="pill w2">W2</span></h3>
+      <h4>Multiplication <span class="pill must">Must</span> (LA-1)</h4>
+      <ul>
+        <li><code>multiply(A, B)</code> validates that <code>A.cols == B.rows</code>, else <code class="err">ShapeError</code>.</li>
+        <li>Schoolbook triple loop; every accumulation is a field operation. Correct against hand-computed small cases.</li>
+        <li>A docstring states the <code>O(n³)</code> baseline and the exact operation count for an <code>m×k</code> by <code>k×p</code> product (<code>m·k·p</code> multiplications, <code>m·p·(k−1)</code> additions).</li>
+      </ul>
+      <h4>Gaussian elimination <span class="pill must">Must</span> (LA-2)</h4>
+      <ul>
+        <li>Row-reduce to row-echelon form using modular inverses for pivot normalisation — <strong>never</strong> a floating-point division.</li>
+        <li>Pivot selection: take <em>any</em> non-zero entry in the current column. There is no stability-based choice because the arithmetic is exact.</li>
+        <li>Track row swaps to keep the determinant sign correct.</li>
+        <li>Return the echelon form plus the pivot list and swap count for the derived algorithms.</li>
+      </ul>
+      <h4>Rank, determinant, inverse <span class="pill must">Must</span> (LA-3)</h4>
+      <ul>
+        <li><code>rank(A)</code> = number of non-zero pivots.</li>
+        <li><code>determinant(A)</code> = product of pivots × <code>(−1)^swaps</code>; <code>0</code> for a singular matrix.</li>
+        <li><code>inverse(A)</code> = reduce <code>[A | I]</code> to <code>[I | A⁻¹]</code>; raise <code class="err">SingularMatrix</code> when a pivot column has no non-zero entry.</li>
+      </ul>
+      <h4>Solve <code>Ax = b</code> <span class="pill must">Must</span> (LA-4)</h4>
+      <ul>
+        <li>Reduce <code>[A | b]</code>. Return the unique solution when one exists.</li>
+        <li><code class="err">NoUniqueSolution</code> — the system is consistent but under-determined (free variables).</li>
+        <li><code class="err">InconsistentSystem</code> — a zero row on the left with a non-zero right-hand side.</li>
+      </ul>
+      <h4>Strassen <span class="pill could">Could</span> (LA-6)</h4>
+      <p>Optional. If taken: identical results to schoolbook on random inputs; a benchmark records the crossover size with a written trade-off note. Time here is secondary to the secure layer and its tests.</p>
+
+      <h3><span class="sub-n">8.4</span>Secret sharing <span class="pill w3">W3</span></h3>
+      <p>Additive <code>n</code>-out-of-<code>n</code> sharing over the field. A share set is an ordered tuple of <code>n</code> field elements tagged with the field and the party count.</p>
+      <h4>Algorithms</h4>
+      <ul>
+        <li><strong>Split</strong> <code>share(v, n)</code>: draw <code>s₁ … s₍ₙ₋₁₎</code> uniformly from <code>[0, p)</code> using <code>secrets</code>; set <code>sₙ = v − (s₁ + … + s₍ₙ₋₁₎) mod p</code>.</li>
+        <li><strong>Reconstruct</strong> <code>reconstruct(shares)</code>: return <code>Σ sᵢ mod p</code>.</li>
+        <li><strong>Local secure addition</strong> <code>add_shares(u_shares, v_shares)</code>: party <code>i</code> computes <code>uᵢ + vᵢ</code>. The result is a valid sharing of <code>u + v</code> because the map <code>v ↦ (s₁,…,sₙ)</code> is linear over the field.</li>
+      </ul>
+      <h4>Public surface</h4>
+      <pre><code>share(v: FieldElement, n: int) -&gt; ShareSet
+reconstruct(shares: ShareSet) -&gt; FieldElement
+add_shares(a: ShareSet, b: ShareSet) -&gt; ShareSet          # local, no communication
+scalar_mul_shares(k: FieldElement, a: ShareSet) -&gt; ShareSet
+add_public(c: FieldElement, a: ShareSet) -&gt; ShareSet       # add constant to one share</code></pre>
+      <h4>Errors</h4>
+      <ul>
+        <li><code class="err">ShareCountMismatch</code> — combining share sets with different <code>n</code>.</li>
+        <li><code class="err">FieldMismatch</code> — share sets over different fields.</li>
+      </ul>
+      <h4>Tests (SS-2, SS-3, SS-4)</h4>
+      <p>Round-trip <code>reconstruct(share(v, n)) == v</code> for many random <code>v</code>, <code>n</code>; the <code>n−1</code>-privacy argument (see <a href="#s12">§12</a>) backed by a distribution check on any <code>n−1</code>-subset; <code>reconstruct(add_shares(share(u), share(v))) == u + v</code>.</p>
+
+      <h3><span class="sub-n">8.5</span>Secure computation <span class="pill w3">W3</span></h3>
+      <h4>Trusted dealer (SP-1)</h4>
+      <p><code>Dealer(field, n)</code> produces a Beaver triple as three share sets <code>([a], [b], [c])</code> with <code>reconstruct([c]) == reconstruct([a]) · reconstruct([b])</code>. The dealer is a documented mini-project simplification standing in for real triple generation; it must be named as such in the security write-up (SP-4).</p>
+      <h4>Shared &#215; shared multiplication</h4>
+      <p>To multiply shared <code>[x]</code> and <code>[y]</code> using one triple <code>([a], [b], [c])</code>:</p>
+      <ol>
+        <li>Locally form <code>[d] = [x] − [a]</code> and <code>[e] = [y] − [b]</code>.</li>
+        <li><strong>Open</strong> <code>d</code> and <code>e</code> — reconstruct them in the clear. Safe: <code>a</code> and <code>b</code> are uniform, so <code>d</code> and <code>e</code> are uniform masks that carry no information about <code>x</code> or <code>y</code>.</li>
+        <li>Locally combine: <code>[xy] = [c] + d·[b] + e·[a] + d·e</code>, where the constant <code>d·e</code> is added to one designated party's share.</li>
+      </ol>
+      <p>Correctness (reconstructed): <code>c + d·b + e·a + d·e = ab + (x−a)b + (y−b)a + (x−a)(y−b) = xy</code>. This identity is exactly what the viva asks the team to derive.</p>
+      <h4>Private inner product <span class="pill must">Must</span> (SP-2)</h4>
+      <ul>
+        <li>Public&#215;shared terms are computed locally with <code>scalar_mul_shares</code>.</li>
+        <li>Each shared&#215;shared term consumes one triple via the step above.</li>
+        <li>The <code>k</code> product shares are summed locally; <code>reconstruct</code> equals the plaintext dot product on random inputs.</li>
+      </ul>
+      <h4>Private matrix product <span class="pill should">Should</span> (SP-3)</h4>
+      <p>Built from the private inner product over the rows of the left matrix and the columns of the right. An <code>m×k</code> by <code>k×p</code> product consumes <code>m·k·p</code> triples. Reconstruction equals the plaintext matrix product on random inputs.</p>
+      <h4>Multiplication boundary <span class="pill must">Must</span> (SP-4)</h4>
+      <p>A short write-up states which operations are local and free (addition, public scaling), which need a triple (shared&#215;shared), and exactly where a real MPC protocol would be required beyond this scope (triple generation, malicious security, networking).</p>
+
+      <h3><span class="sub-n">8.6</span>Verification &amp; benchmarking <span class="pill w3">W3</span> + all</h3>
+      <ul>
+        <li><strong>VB-1 <span class="pill must">Must</span>:</strong> for random inputs, reconstructed secure inner and matrix products equal the plaintext results. Run with a fixed seed for reproducibility plus a few unseeded rounds.</li>
+        <li><strong>VB-2 <span class="pill should">Should</span>:</strong> matrix-multiply timings across increasing <code>n</code>, recorded as a table and a short plot description; if Strassen is done, the crossover point is recorded.</li>
+      </ul>
+    </section>
+
+    <section id="s9">
+      <h2><span class="sec-n">9</span>Data structures<a class="anchor" href="#s9">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Structure</th><th>Representation</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">FieldElement</td><td>Reduced <code>int</code> in <code>[0, p)</code> + field reference</td><td>Immutable. Equality compares reduced values.</td></tr>
+            <tr><td class="mono">Field</td><td><code>p</code> + cached <code>zero</code>/<code>one</code> + optional small-<code>p</code> inverse table</td><td>Inverse lookup table is an optional optimisation for <code>p = 101</code>; extended Euclid is the reference path.</td></tr>
+            <tr><td class="mono">Vector</td><td>List of <code>n</code> entries + field + orientation</td><td>1-D; reuses matrix ops where practical.</td></tr>
+            <tr><td class="mono">Matrix</td><td>Row-major list of lists, <code>rows × cols</code> + field</td><td>Rectangular invariant enforced at construction.</td></tr>
+            <tr><td class="mono">ShareSet</td><td>Ordered tuple of <code>n</code> <code>FieldElement</code>s + field + <code>n</code></td><td>Order is the party index. Never reordered.</td></tr>
+            <tr><td class="mono">BeaverTriple</td><td>Three <code>ShareSet</code>s <code>([a],[b],[c])</code></td><td>One triple is consumed per shared&#215;shared multiplication.</td></tr>
+            <tr><td class="mono">EchelonResult</td><td>Reduced matrix + pivot column list + row-swap count</td><td>Internal return of Gaussian elimination; feeds rank/det/inverse/solve.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Optional sparse structures are permitted for large benchmark inputs but are not required and must not complicate the core API.</p>
+    </section>
+
+    <section id="s10">
+      <h2><span class="sec-n">10</span>Error-handling model<a class="anchor" href="#s10">#</a></h2>
+      <p>All library errors derive from one base class so a caller can catch broadly or narrowly. Errors are raised at the layer that detects the violation, with a message that names the offending values.</p>
+      <pre><code>SecLinAlgError                 (base)
+├── FieldError
+│   ├── NotPrime                Field(p) with composite p
+│   ├── NoInverse               inverse() of 0 or non-coprime element
+│   └── FieldMismatch           operands from different fields
+├── ShapeError                  non-rectangular / dimension mismatch
+├── SingularError
+│   ├── SingularMatrix          inverse() of a non-invertible matrix
+│   ├── NoUniqueSolution        consistent but under-determined system
+│   └── InconsistentSystem      no solution exists
+└── ShareError
+    ├── ShareCountMismatch      combining share sets with different n
+    └── TripleExhausted         shared×shared multiply with no triple available</code></pre>
+      <div class="callout note">
+        <span class="c-tag">Rule</span>
+        <p>No <code>assert</code> in library code paths (asserts vanish under <code>-O</code>). No returning <code>None</code> or a sentinel to signal failure. Every documented failure mode has a test that asserts the specific error type is raised.</p>
+      </div>
+    </section>
+
+    <section id="s11">
+      <h2><span class="sec-n">11</span>Complexity analysis<a class="anchor" href="#s11">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Operation</th><th>Cost</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td>Field add / sub / mul</td><td class="tnum">O(1)</td><td>Fixed-width integers at the runtime prime.</td></tr>
+            <tr><td>Field inverse (extended Euclid)</td><td class="tnum">O(log p)</td><td>Number of division steps is logarithmic in <code>p</code>.</td></tr>
+            <tr><td>Matrix add / transpose</td><td class="tnum">O(n²)</td><td>One pass over the entries.</td></tr>
+            <tr><td>Matrix multiply (schoolbook)</td><td class="tnum">O(n³)</td><td><code>n³</code> field multiplications for <code>n×n</code>.</td></tr>
+            <tr><td>Matrix multiply (Strassen, optional)</td><td class="tnum">O(n^2.807)</td><td><code>log₂ 7</code>. Wins only past a crossover size; extra additions dominate for small <code>n</code>.</td></tr>
+            <tr><td>Gaussian elimination</td><td class="tnum">O(n³)</td><td>Also the cost of rank, determinant, inverse, and solve.</td></tr>
+            <tr><td>Share split / reconstruct</td><td class="tnum">O(n)</td><td><code>n</code> = party count.</td></tr>
+            <tr><td>Local secure addition</td><td class="tnum">O(n)</td><td>One field add per party. No communication.</td></tr>
+            <tr><td>Private inner product (length <code>k</code>)</td><td class="tnum">O(k)</td><td>One triple and one open per shared&#215;shared term.</td></tr>
+            <tr><td>Private matrix product (<code>m×k</code> · <code>k×p</code>)</td><td class="tnum">O(m·k·p)</td><td><code>m·k·p</code> triples consumed.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The two viva-relevant derivations: (1) count the loops in schoolbook multiply to get <code>n³</code>, and show Strassen trades one multiplication for additions in the <code>2×2</code> block recurrence <code>T(n) = 7·T(n/2) + O(n²)</code>; (2) show inverse is <code>O(log p)</code>, not <code>O(p)</code>, because it uses extended Euclid rather than a search.</p>
+    </section>
+
+    <div class="part-divider" id="partIII">
+      <span class="part-label">Part III</span>
+      <h2 class="part-title">Quality, Security &amp; Delivery</h2>
+      <p>What makes the build defensible at review: the security argument in full, the non-functional targets and how each is met, the layered test plan, the repository layout, the risk register, and the requirement-to-code traceability.</p>
+    </div>
+
+    <section id="s12">
+      <h2><span class="sec-n">12</span>Security design<a class="anchor" href="#s12">#</a></h2>
+
+      <h3><span class="sub-n">12.1</span>Threat model</h3>
+      <p><strong>Honest-but-curious.</strong> Every party follows the protocol exactly but may inspect everything it receives. Parties do not collude beyond holding up to <code>n−1</code> shares between them. There is no active tampering, no dropped messages, no timing side channels. All parties run in one process for the mini-project; the model is what would hold if they were separate.</p>
+      <p><strong>Out of scope:</strong> malicious parties, <code>n</code>-of-<code>n</code> collusion, real triple generation, and network-level adversaries. The write-up must say so plainly (SP-4).</p>
+
+      <h3><span class="sub-n">12.2</span>Why a finite field, not floating point</h3>
+      <p>Secret sharing needs <code>reconstruct(share(v)) == v</code> to hold <em>exactly</em>. Floating point cannot promise that — <code>s₁ + s₂ + s₃</code> may not equal <code>v</code> after rounding, and the masks in a Beaver triple would not cancel. A finite field gives exact arithmetic and a well-defined inverse for every non-zero element, which is also what Gaussian elimination needs to divide by a pivot.</p>
+
+      <h3><span class="sub-n">12.3</span>Why <code>n−1</code> shares reveal nothing</h3>
+      <p>By construction, <code>s₁ … s₍ₙ₋₁₎</code> are drawn independently and uniformly from <code>Z_p</code>, and <code>sₙ = v − Σ sᵢ</code>. Take any subset of <code>n−1</code> shares:</p>
+      <ul>
+        <li>If it is exactly <code>{s₁ … s₍ₙ₋₁₎}</code>, those are uniform and independent of <code>v</code> by definition.</li>
+        <li>If it includes <code>sₙ</code>, then the one missing share <code>sⱼ</code> (<code>j &lt; n</code>) is uniform and appears in <code>sₙ = v − Σ sᵢ</code>, acting as a one-time pad: for every candidate secret <code>v'</code> there is exactly one value of <code>sⱼ</code> consistent with the observed <code>n−1</code> shares. So the observed shares are uniform on <code>(Z_p)^{n−1}</code> regardless of <code>v</code>.</li>
+      </ul>
+      <p>Either way the marginal distribution of any <code>n−1</code> shares is the same for every secret, so they carry no information. The test in SS-3 checks this empirically by fixing a subset and confirming its distribution does not shift with <code>v</code>.</p>
+
+      <h3><span class="sub-n">12.4</span>Why opening <code>d</code> and <code>e</code> is safe</h3>
+      <p>In Figure 3, <code>d = x − a</code> and <code>e = y − b</code> where <code>a</code>, <code>b</code> are uniform and secret. <code>d</code> and <code>e</code> are therefore uniform over <code>Z_p</code> and independent of <code>x</code>, <code>y</code> — revealing them is revealing two random numbers. The secret inputs stay hidden; only the final result is reconstructed.</p>
+
+      <div class="callout security">
+        <span class="c-tag">Security — what the demo must show</span>
+        <p>Print the shares of a secret and show any one (or <code>n−1</code>) is indistinguishable from random. Run a secure inner product, show the parties only ever exchange opened masks, reconstruct the result, and compare it to the plaintext dot product. State which step would need a real protocol outside this scope.</p>
+      </div>
+    </section>
+
+    <section id="s13">
+      <h2><span class="sec-n">13</span>Non-functional requirements<a class="anchor" href="#s13">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <caption>From R4. Several of these are acceptance criteria — a working-but-inadequate submission can still fail on them.</caption>
+          <thead><tr><th>Attribute</th><th>Requirement</th><th>How this design meets it</th><th>Verified by</th></tr></thead>
+          <tbody>
+            <tr><td>Correctness</td><td>All operations exact over <code>Z_p</code>; secure results reconstruct to the plaintext result.</td><td>Integer-only core; no floating point below layer 6.</td><td>FA-3, CT-3, VB-1</td></tr>
+            <tr><td>Security</td><td>Any <code>n−1</code> shares reveal nothing; sharing and reconstruction are sound.</td><td>Uniform first shares via <code>secrets</code>; one-time-pad argument (<a href="#s12">§12.3</a>).</td><td>SS-2, SS-3</td></tr>
+            <tr><td>Numerical soundness</td><td>No floating-point rounding in field computation.</td><td>Enforced by principle 5.1.2; grep for <code>/</code>, <code>float</code> in core modules during review.</td><td>Code review</td></tr>
+            <tr><td>Performance</td><td>Matrix-multiply complexity stated; Strassen discussed where it helps.</td><td>Docstring on <code>multiply</code>; benchmark VB-2.</td><td>VB-2</td></tr>
+            <tr><td>Maintainability</td><td>Layered design keeps components independently testable.</td><td>Strict layer rule (<a href="#s4">§4</a>); no upward imports.</td><td>Test suites run per layer</td></tr>
+            <tr><td>Reusability</td><td>API works across field choices, not one baked-in prime.</td><td>Field is a constructor parameter (principle 5.1.4).</td><td>Same tests at <code>p = 101</code> and <code>2³¹−1</code></td></tr>
+            <tr><td>Robustness</td><td>Non-invertible elements and singular matrices/systems detected and reported.</td><td>Typed error hierarchy (<a href="#s10">§10</a>); every failure mode tested.</td><td>LA-5</td></tr>
+            <tr><td>Portability</td><td>No platform-specific dependencies.</td><td>Standard library only.</td><td>CI on a clean environment</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="s14">
+      <h2><span class="sec-n">14</span>Testing strategy<a class="anchor" href="#s14">#</a></h2>
+      <p>Tests are evidence, not an afterthought. Each test is tagged with the acceptance criterion it proves. Hard cases — singular matrices, non-invertible elements, single-share privacy — are written early.</p>
+      <div class="two-col">
+        <div>
+          <h4>Field <span class="mono">tests/field/</span></h4>
+          <ul>
+            <li>Reduction of positive, negative, and large integers.</li>
+            <li>Field laws: associativity, commutativity, distributivity, identities.</li>
+            <li>Inverse of every non-zero element at <code>p = 101</code>; <code>inverse(0)</code> raises.</li>
+          </ul>
+          <h4>Types &amp; matrix <span class="mono">tests/matrix/</span></h4>
+          <ul>
+            <li>Shape validation; non-rectangular input raises <code class="err">ShapeError</code>.</li>
+            <li>Identities: <code>A+0=A</code>, <code>A·I=A</code>, <code>(Aᵀ)ᵀ=A</code>, <code>(A·B)ᵀ=Bᵀ·Aᵀ</code>.</li>
+            <li>Multiply against hand-computed <code>2×2</code> and <code>3×3</code> cases.</li>
+            <li>Gaussian elimination with row swaps and zero pivots.</li>
+            <li>Rank / determinant / inverse for regular and singular matrices.</li>
+            <li>Solve: unique, under-determined, and inconsistent systems each raise the right result or error.</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Secure <span class="mono">tests/secure/</span></h4>
+          <ul>
+            <li>Share / reconstruct round trip for many random <code>v</code>, <code>n</code>.</li>
+            <li><code>n−1</code>-share distribution does not shift with the secret.</li>
+            <li>Secure addition reconstructs to <code>u + v</code>.</li>
+            <li>Dealer triple satisfies <code>c = a·b</code> after reconstruction.</li>
+            <li>Private inner product vs. plaintext dot product, randomised.</li>
+            <li>Private matrix product vs. plaintext matrix product, randomised.</li>
+          </ul>
+          <h4>Cross-cutting</h4>
+          <ul>
+            <li>Every suite runs from one command and reports pass/fail per criterion.</li>
+            <li>Same matrix suite runs at <code>p = 101</code> and <code>p = 2³¹−1</code>.</li>
+            <li>A grep check in CI fails the build on an excluded import.</li>
+            <li>Benchmarks live in <code>benchmarks/</code>, separate from functional tests.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="s15">
+      <h2><span class="sec-n">15</span>Repository &amp; build<a class="anchor" href="#s15">#</a></h2>
+      <pre><code>seclinalg/
+├── field/         # Field, FieldElement, extended Euclid          [W1]
+├── types/         # Vector, Matrix, core operations                [W1]
+├── linalg/        # multiply, elimination, rank/det/inverse, solve [W1 mul, W2 rest]
+├── sharing/       # share, reconstruct, add_shares                 [W3]
+├── secure/        # dealer, beaver_mul, inner_product, mat_product [W3]
+└── errors.py      # the SecLinAlgError hierarchy                   [shared]
+
+tests/
+├── field/  matrix/  secure/
+
+benchmarks/        # matrix-multiply timings, optional Strassen crossover
+examples/          # small runnable demos for each review
+docs/
+├── design/        # this SDD, data-flow notes, decision log
+├── security/      # threat model, sharing proof, multiplication boundary
+└── requirements/  # PRD, backlog (reference copies)
+README.md          # install, run, test, one-paragraph architecture</code></pre>
+      <ul>
+        <li>One shared repository. Small, frequent commits. Every member can run the full test command.</li>
+        <li>Each worklet owns its package directory; the <code>errors.py</code> hierarchy and the <a href="#s6">§6</a> contracts are changed only by agreement.</li>
+        <li>A tiny end-to-end example over <code>p = 101</code> exists from week 1 and grows into the integration demo.</li>
+        <li>Traceability is the rule: every requirement points to a module and a test (<a href="#s17">§17</a>).</li>
+      </ul>
+    </section>
+
+    <section id="s16">
+      <h2><span class="sec-n">16</span>Risks &amp; mitigations<a class="anchor" href="#s16">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
+          <tbody>
+            <tr><td>Interface drift between worklets</td><td>Painful re-integration late in the term</td><td>Freeze the <a href="#s6">§6</a> contracts at Week 3; version any change; notify consumers.</td></tr>
+            <tr><td>Hard-coded prime in <code>Matrix</code></td><td>API cannot be reused; rework</td><td>Field is a constructor parameter from day one; test at two primes.</td></tr>
+            <tr><td>Floating point leaking into the core</td><td>Inexact results; sharing breaks</td><td>Integer-only core; CI grep; code review of every <code>/</code> in <code>linalg</code>.</td></tr>
+            <tr><td>Silent singular-matrix failure</td><td>Wrong answers trusted as correct</td><td>Typed, documented errors; a test per singular case (LA-5).</td></tr>
+            <tr><td>Secure op reconstructs plaintext too early</td><td>Security claim void even with passing output</td><td>Tests and review around the open/reconstruct boundary; only <code>d</code>, <code>e</code>, and the final result are ever opened.</td></tr>
+            <tr><td>Time sunk into Strassen or real crypto</td><td>Weak Worklet 3, weak viva</td><td>Strassen and sparse structures are <span class="pill could">Could</span>; the security argument and VB-1 are <span class="pill must">Must</span>.</td></tr>
+            <tr><td>Weak security explanation</td><td>Lost marks on conceptual understanding</td><td>Keep the <code>docs/security/</code> note from week 1; rehearse the <a href="#s12">§12</a> arguments at every review.</td></tr>
+            <tr><td>Integration surprises</td><td>Nothing runs end to end at Week 11</td><td>Tiny end-to-end demo from week 1; frequent shared-repo commits.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="s17">
+      <h2><span class="sec-n">17</span>Traceability matrix<a class="anchor" href="#s17">#</a></h2>
+      <div class="table-scroll">
+        <table>
+          <caption>Functional requirement → module → backlog story → proving test. Fill the "status" column during the gap analysis.</caption>
+          <thead><tr><th>FR</th><th>Requirement</th><th>Module</th><th>Story</th><th>Test</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">FR1</td><td>Modular add/sub/mul/inverse over a prime field</td><td class="mono">field</td><td class="mono">FA-1, FA-2</td><td>tests/field/laws, tests/field/inverse</td></tr>
+            <tr><td class="mono">FR2</td><td>Vector &amp; Matrix parameterised by the field</td><td class="mono">types</td><td class="mono">CT-1</td><td>tests/matrix/construct</td></tr>
+            <tr><td class="mono">FR3</td><td>Add, scalar-mul, transpose, equality</td><td class="mono">types</td><td class="mono">CT-2</td><td>tests/matrix/ops, tests/matrix/identities</td></tr>
+            <tr><td class="mono">FR4</td><td>Matrix multiplication with stated complexity</td><td class="mono">linalg</td><td class="mono">LA-1</td><td>tests/matrix/multiply</td></tr>
+            <tr><td class="mono">FR5</td><td>Gaussian elimination, no floating point</td><td class="mono">linalg</td><td class="mono">LA-2</td><td>tests/matrix/elimination</td></tr>
+            <tr><td class="mono">FR6</td><td>Rank, determinant, inverse; report singular</td><td class="mono">linalg</td><td class="mono">LA-3, LA-5</td><td>tests/matrix/rank_det_inv, tests/matrix/singular</td></tr>
+            <tr><td class="mono">FR7</td><td>Solve <code>Ax = b</code>, exceptional cases explicit</td><td class="mono">linalg</td><td class="mono">LA-4, LA-5</td><td>tests/matrix/solve</td></tr>
+            <tr><td class="mono">FR8</td><td>Additive secret sharing and reconstruction</td><td class="mono">sharing</td><td class="mono">SS-1, SS-2</td><td>tests/secure/roundtrip</td></tr>
+            <tr><td class="mono">FR9</td><td>Local secure addition, no communication</td><td class="mono">sharing</td><td class="mono">SS-4</td><td>tests/secure/add</td></tr>
+            <tr><td class="mono">FR10</td><td>Private inner/matrix product, verified vs. plaintext</td><td class="mono">secure</td><td class="mono">SP-2, SP-3, VB-1</td><td>tests/secure/inner, tests/secure/matprod</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout note">
+        <span class="c-tag">First development task</span>
+        <p>Before writing features, extend this table with a "status" and "gap / action" column for every backlog story (FA, CT, LA, SS, SP, VB), inspect any existing code, run the current tests, and record the baseline. Then freeze the <a href="#s6">§6</a> interfaces and build story by story.</p>
+      </div>
+    </section>
+
+    <section id="s18">
+      <h2><span class="sec-n">18</span>Open questions<a class="anchor" href="#s18">#</a></h2>
+      <ul>
+        <li><strong>Party simulation in the demo.</strong> Show <code>n</code> explicit simulated party objects, or reconstruct within one object? Explicit simulation makes a stronger viva — recommended, decision needed before Worklet 3 integration.</li>
+        <li><strong>Strassen.</strong> In or out for this team's timeline? Decide before the Worklet 2 review so it does not slip into Worklet 3.</li>
+        <li><strong>Entry storage.</strong> <code>FieldElement</code> objects everywhere, or raw <code>int</code>s internally with wrappers at the boundary? Default is the boundary rule in <a href="#s6">§6</a>; revisit only on a measured bottleneck.</li>
+        <li><strong>Final grade split.</strong> The student guidelines put the Week-13 demo/viva at 30%; the faculty slide deck splits it 25% at Week 13 plus 5% for the Week-14 report. Confirm with the guide. Does not affect the technical work.</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<button class="theme-toggle" id="themeBtn" type="button" aria-label="Toggle colour theme">theme</button>
+
+<footer class="doc-foot">
+  <div class="wrap">
+    <p><strong>Secure Linear Algebra Library — System Design Document v1.1.</strong> Organised as High-Level Design (§3–§7), Low-Level Design (§8–§11), and Quality, Security &amp; Delivery (§12–§18). Derived from the MP16 Product Requirements Document v1.0, User Stories &amp; Backlog v1.0, Guidelines to Students and Faculty for Mini Project 16, the CSE Mini Projects Worklets catalogue, the Evaluation 1 Template V2, and the consolidated Development &amp; Evaluation Plan.</p>
+    <p>COEP Technological University · Department of Computer Science &amp; Engineering · Foundations-first framework · August 2026.</p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    "use strict";
+    var btn = document.getElementById("themeBtn");
+    var root = document.documentElement;
+    var order = ["system", "light", "dark"];
+    var stored;
+    try { stored = localStorage.getItem("sdd-theme"); } catch (e) { stored = null; }
+    function apply(mode) {
+      if (mode === "system") { root.removeAttribute("data-theme"); }
+      else { root.setAttribute("data-theme", mode); }
+      btn.textContent = mode === "system" ? "theme: auto" : "theme: " + mode;
+    }
+    apply(stored && order.indexOf(stored) > -1 ? stored : "system");
+    btn.addEventListener("click", function () {
+      var cur = root.getAttribute("data-theme") || "system";
+      var next = order[(order.indexOf(cur) + 1) % order.length];
+      apply(next);
+      try { localStorage.setItem("sdd-theme", next); } catch (e) {}
+    });
+
+    var links = Array.prototype.slice.call(document.querySelectorAll("#tocList a"));
+    var map = {};
+    links.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
+    var sections = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); }).filter(Boolean);
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) {
+            links.forEach(function (l) { l.classList.remove("active"); });
+            var active = map[en.target.id];
+            if (active) active.classList.add("active");
+          }
+        });
+      }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+      sections.forEach(function (s) { io.observe(s); });
+    }
+  })();
+</script>

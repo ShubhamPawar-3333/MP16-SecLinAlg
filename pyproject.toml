@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seclinalg"
+version = "0.1.0"
+description = "Linear algebra library for secure computation (COEP MP16)"
+requires-python = ">=3.10"
+dependencies = []            # standard library only, by design
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
