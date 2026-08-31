@@ -4,7 +4,10 @@ A foundations-first educational library: exact finite-field arithmetic, generic
 Vector/Matrix types and algorithms, and additive secret-sharing primitives for
 secure computation. Python standard library only.
 
-See `docs/design/MP16-System-Design-Document.html` for the full design.
+- `docs/design/MP16-System-Design-Document.html` — the full design (HLD + LLD).
+- `docs/walkthrough/` — every line of the reference code explained in plain language.
+- `docs/teaching/common-mistakes.md` — mistakes students make, layer by layer, with the question to ask each time.
+- `docs/security/` — threat model, the n−1 privacy proof, the multiplication boundary.
 
 ## Layout
 
