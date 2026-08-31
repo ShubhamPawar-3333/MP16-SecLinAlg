@@ -20,11 +20,22 @@ See `docs/design/MP16-System-Design-Document.html` for the full design.
 ## Run
 
 ```bash
-python -m pytest            # full suite
+python -m venv .venv && source .venv/bin/activate
+pip install -e .            # editable install; also `pip install pytest`
+
+python -m pytest            # full suite (99 tests)
 python -m pytest tests/field
 python examples/end_to_end.py
 python benchmarks/matmul_bench.py
 ```
+
+The library itself has no dependencies; `pytest` is the only dev dependency.
+
+## Status
+
+All five layers are implemented and tested (FA, CT, LA-1..LA-5, SS, SP, VB-1).
+Not yet done: LA-6 Strassen (Could), VB-2 as a committed artefact, and the
+SP-4 boundary write-up polish. See `docs/design/decision-log.md`.
 
 ## Locked decisions (SDD 5.2)
 

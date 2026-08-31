@@ -95,6 +95,14 @@ def add_shares(a: ShareSet, b: ShareSet) -> ShareSet:
     )
 
 
+def sub_shares(a: ShareSet, b: ShareSet) -> ShareSet:
+    """Sharing of (u - v). Local. Used to form [x] - [a] in a Beaver multiply."""
+    _check_compatible(a, b)
+    return ShareSet(
+        tuple(x - y for x, y in zip(a.shares, b.shares)), a.field, a.n
+    )
+
+
 def scalar_mul_shares(k, a: ShareSet) -> ShareSet:
     """Sharing of (k * v) for a public constant k. Local."""
     k = a.field.element(k)
@@ -109,3 +117,16 @@ def add_public(c, a: ShareSet, party: int = 0) -> ShareSet:
     new = list(a.shares)
     new[party] = new[party] + c
     return ShareSet(tuple(new), a.field, a.n)
+
+
+def share_many(values, n: int, field=None) -> list:
+    """Share an iterable of values -> list of ShareSet (one per value)."""
+    values = list(values)
+    if field is None and values:
+        field = _resolve_field(values[0], None)
+    return [share(v, n, field=field) for v in values]
+
+
+def reconstruct_many(share_sets) -> list:
+    """Reconstruct an iterable of ShareSet -> list of FieldElement."""
+    return [reconstruct(s) for s in share_sets]

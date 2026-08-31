@@ -9,11 +9,21 @@ from seclinalg.sharing.shares import (
     add_public,
     add_shares,
     reconstruct,
+    reconstruct_many,
     scalar_mul_shares,
     share,
+    share_many,
+    sub_shares,
 )
 
 __all__ = [
-    "ShareSet", "share", "reconstruct",
-    "add_shares", "scalar_mul_shares", "add_public",
+    "ShareSet",
+    "share",
+    "reconstruct",
+    "add_shares",
+    "sub_shares",
+    "scalar_mul_shares",
+    "add_public",
+    "share_many",
+    "reconstruct_many",
 ]
